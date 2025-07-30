@@ -1,0 +1,335 @@
+// backend/src/server.ts
+
+import dotenv from "dotenv";
+dotenv.config();
+
+import express, { Request, Response } from "express";
+import cors from "cors";
+import multer from "multer";
+import { spawn } from "child_process";
+import path from "path";
+import fs from "fs"; // Import fs for file system operations
+
+import connectDB from "./config/db";
+import DocumentModel, { IDocument } from "./models/Document";
+
+// Import Google Gemini SDK
+import {
+  GoogleGenerativeAI,
+  HarmBlockThreshold,
+  HarmCategory,
+} from "@google/generative-ai";
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// --- Connect to MongoDB ---
+connectDB();
+
+// --- Configure Google Gemini API ---
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_API_KEY) {
+  console.error(
+    "GEMINI_API_KEY is not set in environment variables. Gemini API calls will fail."
+  );
+  // process.exit(1); // Consider exiting if API key is critical for startup
+}
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY || ""); // Provide empty string if not set, handled by error above
+const geminiModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" }); // Using the latest 2.5 Pro model
+
+// --- Middleware ---
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// --- Multer for file uploads ---
+// Configure storage for uploaded files
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, "../uploads");
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir);
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  },
+});
+const upload = multer({ storage: storage });
+
+// --- Helper function to run Python script ---
+const runPythonScript = (
+  scriptPath: string,
+  args: string[]
+): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const pythonProcess = spawn("python", [scriptPath, ...args]);
+
+    let stdout = "";
+    let stderr = "";
+
+    pythonProcess.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    pythonProcess.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    pythonProcess.on("close", (code) => {
+      if (code === 0) {
+        resolve(stdout.trim());
+      } else {
+        reject(
+          new Error(
+            `Python script exited with code ${code}. Stderr: ${stderr.trim()}`
+          )
+        );
+      }
+    });
+
+    pythonProcess.on("error", (err) => {
+      reject(new Error(`Failed to start Python script: ${err.message}`));
+    });
+  });
+};
+
+// --- API Routes ---
+
+// @route   POST /api/universal-upload
+// @desc    Uploads a file, processes it, and stores embeddings in ChromaDB
+app.post(
+  "/api/universal-upload",
+  upload.single("file"),
+  async (req: Request, res: Response) => {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded." });
+    }
+
+    const { originalname, mimetype, path: filePath } = req.file;
+
+    try {
+      // 1. Save document metadata to MongoDB
+      const newDocument = new DocumentModel({
+        fileName: originalname,
+        originalType: mimetype,
+        processed: false,
+      });
+      await newDocument.save();
+      const mongoDocumentId = (newDocument._id as any).toString(); // Convert to string explicitly
+
+      // 2. Trigger Python script to process and embed document
+      const pythonScriptPath = path.join(
+        __dirname,
+        "../python_scripts/chroma_handler.py"
+      );
+      const pythonArgs = [
+        "embed_document",
+        filePath,
+        mimetype,
+        mongoDocumentId,
+      ];
+
+      // The Python script will print "SUCCESS:document_id" or "FAILURE:error_message"
+      const pythonOutput = await runPythonScript(pythonScriptPath, pythonArgs);
+
+      const successMatch = pythonOutput.match(/SUCCESS:(.+)$/m);
+      if (successMatch) {
+        const chromaDocId = successMatch[1].trim();
+        // 3. Update MongoDB document with ChromaDB ID
+        newDocument.processed = true;
+        newDocument.chromaDocumentId = chromaDocId;
+        await newDocument.save();
+
+        // 4. Respond to frontend
+        res.status(200).json({
+          message: "File uploaded and processed successfully!",
+          documentId: mongoDocumentId, // Send MongoDB ID back to frontend
+          chromaDocumentId: chromaDocId,
+        });
+      } else {
+        throw new Error(`Python processing failed: ${pythonOutput}`);
+      }
+    } catch (error: any) {
+      console.error("File upload and processing error:", error);
+      res
+        .status(500)
+        .json({ message: "Error processing file", error: error.message });
+    } finally {
+      // Optional: Clean up the uploaded file after processing
+      // fs.unlink(filePath, (err) => {
+      //   if (err) console.error('Error deleting temp file:', err);
+      // });
+    }
+  }
+);
+
+// @route   POST /api/universal-qa
+// @desc    Receives a query, retrieves context from ChromaDB, and gets AI response
+app.post("/api/universal-qa", async (req: Request, res: Response) => {
+  const { query, documentIds } = req.body; // documentIds will be an array of MongoDB IDs
+
+  if (!query) {
+    return res.status(400).json({ message: "Query is required." });
+  }
+
+  try {
+    let chromaDocumentIds: string[] = [];
+
+    // If specific document IDs are provided from frontend, find their ChromaDB IDs
+    if (documentIds && documentIds.length > 0) {
+      const documents = await DocumentModel.find({
+        _id: { $in: documentIds },
+        processed: true,
+      });
+      chromaDocumentIds = documents
+        .map((doc) => doc.chromaDocumentId!)
+        .filter(Boolean) as string[];
+      if (chromaDocumentIds.length === 0) {
+        return res
+          .status(400)
+          .json({
+            message: "No processed documents found for the provided IDs.",
+          });
+      }
+    } else {
+      // If no specific document IDs are provided, query all processed documents
+      const allProcessedDocs = await DocumentModel.find({ processed: true });
+      chromaDocumentIds = allProcessedDocs
+        .map((doc) => doc.chromaDocumentId!)
+        .filter(Boolean) as string[];
+      if (chromaDocumentIds.length === 0) {
+        return res
+          .status(400)
+          .json({
+            message:
+              "No documents have been processed yet. Please upload a file first.",
+          });
+      }
+    }
+
+    // 1. Trigger Python script to query ChromaDB for relevant chunks
+    const pythonScriptPath = path.join(
+      __dirname,
+      "../python_scripts/chroma_handler.py"
+    );
+    const queryArgs = ["query_documents", query, chromaDocumentIds.join(",")]; // Pass IDs as comma-separated string
+    const relevantChunksJson = await runPythonScript(
+      pythonScriptPath,
+      queryArgs
+    );
+    const relevantChunks: string[] = JSON.parse(relevantChunksJson); // Python returns JSON array of texts
+
+    if (relevantChunks.length === 0) {
+      return res.status(200).json({
+        answer:
+          "I couldn't find relevant information in the uploaded documents for your query. Please try rephrasing or upload more relevant files.",
+        citations: [],
+        nextSteps: [],
+        chartData: undefined, // Ensure chartData is undefined if no relevant info
+      });
+    }
+
+    // 2. Construct prompt for LLM (RAG)
+    const context = relevantChunks.join("\n\n");
+    const llmPrompt = `You are an intelligent assistant. Answer the following question based ONLY on the provided context. If the answer cannot be found in the context, state that you don't have enough information.
+If the question asks for numerical comparison or data visualization, suggest a chart type (e.g., "bar chart", "line chart", "pie chart") and briefly describe what it would show.
+
+Context:
+${context}
+
+Question: "${query}"
+
+Answer:`;
+
+    // 3. Call Google Gemini 2.5 Pro API
+    const result = await geminiModel.generateContent({
+      contents: [{ role: "user", parts: [{ text: llmPrompt }] }],
+      safetySettings: [
+        {
+          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+      ],
+    });
+
+    const response = result.response;
+    const aiAnswer = response.text();
+
+    // 4. Extract citations (simplified for now)
+    const citations = relevantChunks.map(
+      (chunk, index) => `Source Chunk ${index + 1}`
+    ); // Improve this later to use actual filenames/pages
+
+    // 5. Simulate chart data and next steps based on AI's answer
+    // In a real app, you might use another LLM call or regex to extract chart/next step suggestions
+    let chartData: string | undefined;
+    let nextSteps: string[] = [];
+
+    if (
+      aiAnswer.toLowerCase().includes("chart") ||
+      aiAnswer.toLowerCase().includes("visualize")
+    ) {
+      chartData = "A chart showing data from the context would be beneficial.";
+      if (aiAnswer.toLowerCase().includes("bar chart"))
+        chartData = "Bar chart showing comparison.";
+      if (aiAnswer.toLowerCase().includes("line chart"))
+        chartData = "Line chart showing trends over time.";
+      if (aiAnswer.toLowerCase().includes("pie chart"))
+        chartData = "Pie chart showing proportions.";
+    }
+
+    // Simple heuristic for next steps (can be improved with more sophisticated LLM prompting)
+    if (aiAnswer.toLowerCase().includes("suggested next steps")) {
+      nextSteps = [
+        "Review the detailed report.",
+        "Discuss findings with the team.",
+      ];
+    } else if (aiAnswer.toLowerCase().includes("further analysis")) {
+      nextSteps = ["Perform further analysis on identified areas."];
+    }
+
+    // 6. Respond to frontend
+    res.status(200).json({
+      answer: aiAnswer,
+      citations: citations,
+      chartData: chartData,
+      nextSteps: nextSteps,
+    });
+  } catch (error: any) {
+    console.error("AI query error:", error);
+    if (error.message.includes("API key not valid")) {
+      res
+        .status(401)
+        .json({ message: "Gemini API key is invalid or not configured." });
+    } else {
+      res
+        .status(500)
+        .json({ message: "Error getting AI response", error: error.message });
+    }
+  }
+});
+
+// --- Basic Route ---
+app.get("/", (req: Request, res: Response) => {
+  res.send("CortexHub Backend is running and connected to MongoDB!");
+});
+
+// --- Start the Server ---
+app.listen(PORT, () => {
+  console.log(`CortexHub Backend listening on port ${PORT}`);
+  console.log(`Access it at: http://localhost:${PORT}`);
+});

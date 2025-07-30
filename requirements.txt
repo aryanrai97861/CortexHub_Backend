@@ -1,0 +1,6 @@
+chromadb
+langchain
+python-dotenv
+pypdf
+openpyxl
+python-docx
