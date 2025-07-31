@@ -12,6 +12,9 @@ import fs from "fs"; // Import fs for file system operations
 
 import connectDB from "./config/db";
 import DocumentModel, { IDocument } from "./models/Document";
+import {connectMySQL,sequelize} from './config/mysql';
+import User from "./models/User";
+import Workspace from "./models/Workspace";
 
 // Import Google Gemini SDK
 import {
@@ -25,6 +28,20 @@ const PORT = process.env.PORT || 5000;
 
 // --- Connect to MongoDB ---
 connectDB();
+
+// --- Synchronize MySQL Models (creates tables if they don't exist) ---
+// Use `alter: true` in development to update tables without dropping data.
+// In production, manage migrations more carefully.
+
+sequelize.sync({alter:true})
+  .then(()=>{
+    console.log('MySQL models synchronized successfully');
+  })
+  .catch((error)=>{
+    console.error('Error synchronizing MySQL models:',error);
+    process.exit(1);
+  });
+
 
 // --- Configure Google Gemini API ---
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -269,6 +286,16 @@ Answer:`;
     const response = result.response;
     const aiAnswer = response.text();
 
+    let chartData: string | undefined;
+    let nextSteps: string[] = [];
+
+    if(aiAnswer.toLowerCase().includes('chart') || aiAnswer.toLowerCase().includes('visualize')){
+      chartData = 'A chart showing data from the context would be beneficial.';
+      if (aiAnswer.toLowerCase().includes('bar chart')) chartData = "Bar chart showing comparison.";
+      if (aiAnswer.toLowerCase().includes('line chart')) chartData = "Line chart showing trends over time.";
+      if (aiAnswer.toLowerCase().includes('pie chart')) chartData = "Pie chart showing proportions.";
+    }
+
     // 4. Extract citations (simplified for now)
     const citations = relevantChunks.map(
       (chunk, index) => `Source Chunk ${index + 1}`
@@ -276,8 +303,6 @@ Answer:`;
 
     // 5. Simulate chart data and next steps based on AI's answer
     // In a real app, you might use another LLM call or regex to extract chart/next step suggestions
-    let chartData: string | undefined;
-    let nextSteps: string[] = [];
 
     if (
       aiAnswer.toLowerCase().includes("chart") ||
@@ -292,13 +317,9 @@ Answer:`;
         chartData = "Pie chart showing proportions.";
     }
 
-    // Simple heuristic for next steps (can be improved with more sophisticated LLM prompting)
-    if (aiAnswer.toLowerCase().includes("suggested next steps")) {
-      nextSteps = [
-        "Review the detailed report.",
-        "Discuss findings with the team.",
-      ];
-    } else if (aiAnswer.toLowerCase().includes("further analysis")) {
+    if (aiAnswer.toLowerCase().includes('suggested next steps')) {
+      nextSteps = ["Review the detailed report.", "Discuss findings with the team."];
+    } else if (aiAnswer.toLowerCase().includes('further analysis')) {
       nextSteps = ["Perform further analysis on identified areas."];
     }
 
