@@ -13,8 +13,8 @@ import fs from "fs"; // Import fs for file system operations
 import connectDB from "./config/db";
 import DocumentModel, { IDocument } from "./models/Document";
 import {connectMySQL,sequelize} from './config/mysql';
-import User from "./models/User";
-import Workspace from "./models/Workspace";
+require('./models/User');
+require('./models/Workspace');
 
 // Import Google Gemini SDK
 import {
@@ -29,18 +29,16 @@ const PORT = process.env.PORT || 5000;
 // --- Connect to MongoDB ---
 connectDB();
 
-// --- Synchronize MySQL Models (creates tables if they don't exist) ---
-// Use `alter: true` in development to update tables without dropping data.
-// In production, manage migrations more carefully.
-
-sequelize.sync({alter:true})
-  .then(()=>{
+// --- Connect to MySQL and then sync it ---
+connectMySQL().then(async () => {
+  try {
+    await sequelize.sync({alter:true});
     console.log('MySQL models synchronized successfully');
-  })
-  .catch((error)=>{
-    console.error('Error synchronizing MySQL models:',error);
+  } catch (error) {
+    console.error('Error synchronizing MySQL models:', error);
     process.exit(1);
-  });
+  }
+});
 
 
 // --- Configure Google Gemini API ---

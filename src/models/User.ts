@@ -1,6 +1,7 @@
 import { DataTypes,Model,Optional } from "sequelize";
 import { sequelize } from "../config/mysql";
 
+console.log("User model initialized");
 //user interface
 interface UserAttributes{
     id:string;
