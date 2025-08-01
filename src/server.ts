@@ -11,10 +11,11 @@ import path from "path";
 import fs from "fs"; // Import fs for file system operations
 
 import connectDB from "./config/db";
-import DocumentModel, { IDocument } from "./models/Document";
+import DocumentModel from "./models/Document";
 import {connectMySQL,sequelize} from './config/mysql';
-require('./models/User');
-require('./models/Workspace');
+import workspaceRoutes from './routes/workspace';
+import Workspace from "./models/Workspace";
+import User from "./models/User";
 
 // Import Google Gemini SDK
 import {
@@ -34,6 +35,17 @@ connectMySQL().then(async () => {
   try {
     await sequelize.sync({alter:true});
     console.log('MySQL models synchronized successfully');
+    const ownerId='00000000-0000-0000-0000-000000000001';
+    const existingUser=await User.findByPk(ownerId);
+    if (!existingUser) {
+      await User.create({
+        id: ownerId,
+        email: 'placeholder@example.com',
+        username: 'PlaceholderUser',
+        passwordHash: 'not_needed_for_this_example'
+      });
+      console.log('Created placeholder user for workspace ownership.');
+    }
   } catch (error) {
     console.error('Error synchronizing MySQL models:', error);
     process.exit(1);
@@ -123,6 +135,11 @@ app.post(
     }
 
     const { originalname, mimetype, path: filePath } = req.file;
+    // A placeholder workspaceId, which will be passed from the frontend later
+    const {workspaceId} = req.body;
+    if(!workspaceId || typeof workspaceId !== 'string'){
+      return res.status(400).json({message:'Workspace ID is required.'})
+    }
 
     try {
       // 1. Save document metadata to MongoDB
@@ -130,6 +147,7 @@ app.post(
         fileName: originalname,
         originalType: mimetype,
         processed: false,
+        workspaceId:workspaceId
       });
       await newDocument.save();
       const mongoDocumentId = (newDocument._id as any).toString(); // Convert to string explicitly
@@ -183,10 +201,13 @@ app.post(
 // @route   POST /api/universal-qa
 // @desc    Receives a query, retrieves context from ChromaDB, and gets AI response
 app.post("/api/universal-qa", async (req: Request, res: Response) => {
-  const { query, documentIds } = req.body; // documentIds will be an array of MongoDB IDs
+  const { query, documentIds,workspaceId } = req.body; // documentIds will be an array of MongoDB IDs
 
   if (!query) {
     return res.status(400).json({ message: "Query is required." });
+  }
+  if(!workspaceId){
+    return res.status(400).json({message:"Workspace ID is required."});
   }
 
   try {
@@ -196,6 +217,7 @@ app.post("/api/universal-qa", async (req: Request, res: Response) => {
     if (documentIds && documentIds.length > 0) {
       const documents = await DocumentModel.find({
         _id: { $in: documentIds },
+        workspaceId:workspaceId,
         processed: true,
       });
       chromaDocumentIds = documents
@@ -341,6 +363,9 @@ Answer:`;
     }
   }
 });
+
+// Use the workspace router
+app.use('/api/workspaces', workspaceRoutes);
 
 // --- Basic Route ---
 app.get("/", (req: Request, res: Response) => {

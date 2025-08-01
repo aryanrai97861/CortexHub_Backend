@@ -7,6 +7,7 @@ export interface IDocument extends Document{
     uploadedAt:Date;
     processed:boolean;
     chromaDocumentId?:string;
+    workspaceId:string;
 }
 
 //define the moongose schema for the document
@@ -16,6 +17,7 @@ const DocumentSchema:Schema=new Schema({
     uploadedAt:{type:Date,default:Date.now},
     processed:{type:Boolean,default:false},
     chromaDocumentId:{type:String,unique:true,sparse:true},
+    workspaceId:{type:String,required:true},
 });
 
 const DocumentModel=mongoose.model<IDocument>('Document',DocumentSchema);
