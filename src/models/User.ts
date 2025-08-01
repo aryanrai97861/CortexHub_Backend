@@ -15,14 +15,14 @@ interface UserCreationAttributes extends Optional<UserAttributes,'id' | 'created
 
 // Define the User model class
 class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
-  id!: string;
-  email!: string;
-  passwordHash!: string;
-  username!: string;
+  declare id: string;
+  declare email: string;
+  declare passwordHash: string;
+  declare username: string;
 
   // Timestamps
-  createdAt!: Date;
-  updatedAt!: Date;
+  declare readonly createdAt: Date;
+  declare readonly updatedAt: Date;
 }
 
 // Define the User model
