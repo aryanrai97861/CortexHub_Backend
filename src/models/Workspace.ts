@@ -20,15 +20,15 @@ interface WorkspaceCreationAttributes extends Optional<WorkspaceAttributes, 'id'
 
 // Define the Workspace model class
 class Workspace extends Model<WorkspaceAttributes, WorkspaceCreationAttributes> implements WorkspaceAttributes {
-  public id!: string;
-  public name!: string;
-  public ownerId!: string;
-  public inviteLink!: string;
-  public description?: string;
+  declare id: string;
+  declare name: string;
+  declare ownerId: string;
+  declare inviteLink: string;
+  declare description?: string;
 
   // Timestamps
-  public readonly createdAt!: Date;
-  public readonly updatedAt!: Date;
+  declare readonly createdAt: Date;
+  declare readonly updatedAt: Date;
 }
 
 // Initialize the Workspace model

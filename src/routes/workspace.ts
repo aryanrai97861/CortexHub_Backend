@@ -3,7 +3,7 @@
 import { Router, Request, Response } from 'express';
 import Workspace from '../models/Workspace';
 import DocumentModel from '../models/Document';
-import { v4 as uuidv4 } from 'uuid'; // For generating unique invite links
+import { v4 as uuidv4 } from 'uuid'; // Correct import for uuid
 
 const router = Router();
 
@@ -24,7 +24,7 @@ router.post('/create', async (req: Request, res: Response) => {
     const newWorkspace = await Workspace.create({
       name: workspaceName,
       ownerId: ownerId, // This will fail if a User with this ID doesn't exist.
-      inviteLink: uuidv4(), // Generate a unique invite link
+      inviteLink: uuidv4(), // Generate a unique UUID for the invite link
     });
 
     res.status(201).json({
