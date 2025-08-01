@@ -232,7 +232,10 @@ app.post("/api/universal-qa", async (req: Request, res: Response) => {
       }
     } else {
       // If no specific document IDs are provided, query all processed documents
-      const allProcessedDocs = await DocumentModel.find({ processed: true });
+      const allProcessedDocs = await DocumentModel.find({ 
+        workspaceId:workspaceId,
+        processed: true,
+       });
       chromaDocumentIds = allProcessedDocs
         .map((doc) => doc.chromaDocumentId!)
         .filter(Boolean) as string[];

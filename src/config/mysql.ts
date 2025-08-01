@@ -10,7 +10,7 @@ const sequelize=new Sequelize(
         host:process.env.MYSQL_HOST as string,
         port:parseInt(process.env.MYSQL_PORT as string,10) || 3306,
         dialect:'mysql',
-        logging:true,
+        logging:false,
         define:{
             timestamps:true,
         },

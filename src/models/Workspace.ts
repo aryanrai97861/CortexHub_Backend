@@ -4,7 +4,6 @@ import { DataTypes, Model, Optional } from 'sequelize';
 import { sequelize } from '../config/mysql';
 import User from '../models/User'; // Import the User model for associations
 
-console.log("Workspace model initialized");
 // Define the interface for Workspace attributes
 interface WorkspaceAttributes {
   id: string; // UUID

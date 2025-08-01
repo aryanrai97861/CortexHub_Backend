@@ -1,7 +1,6 @@
 import { DataTypes,Model,Optional } from "sequelize";
 import { sequelize } from "../config/mysql";
 
-console.log("User model initialized");
 //user interface
 interface UserAttributes{
     id:string;
@@ -16,14 +15,14 @@ interface UserCreationAttributes extends Optional<UserAttributes,'id' | 'created
 
 // Define the User model class
 class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
-  public id!: string;
-  public email!: string;
-  public passwordHash!: string;
-  public username!: string;
+  id!: string;
+  email!: string;
+  passwordHash!: string;
+  username!: string;
 
   // Timestamps
-  public readonly createdAt!: Date;
-  public readonly updatedAt!: Date;
+  createdAt!: Date;
+  updatedAt!: Date;
 }
 
 // Define the User model
