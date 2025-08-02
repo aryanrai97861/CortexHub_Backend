@@ -87,7 +87,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // --- Helper function to run Python script ---
-const runPythonScript = (
+export const runPythonScript = (
   scriptPath: string,
   args: string[]
 ): Promise<string> => {
