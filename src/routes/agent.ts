@@ -15,7 +15,7 @@ router.post('/run', async (req: Request, res: Response) => {
 
   try {
     const pythonScriptPath = path.join(__dirname, '../../python_scripts/langgraph_agent.py');
-    const pythonArgs = ['run_agent', goal];
+    const pythonArgs = ['run_agent', goal, 'default_session'];
     
     // The Python script will return a JSON object with a log array
     const pythonOutput = await runPythonScript(pythonScriptPath, pythonArgs);
