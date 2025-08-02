@@ -14,7 +14,7 @@ import connectDB from "./config/db";
 import DocumentModel from "./models/Document";
 import {connectMySQL,sequelize} from './config/mysql';
 import workspaceRoutes from './routes/workspace';
-import Workspace from "./models/Workspace";
+require('./models/Workspace');
 import User from "./models/User";
 
 // Import Google Gemini SDK
@@ -259,7 +259,8 @@ app.post("/api/universal-qa", async (req: Request, res: Response) => {
       pythonScriptPath,
       queryArgs
     );
-    const relevantChunks: string[] = JSON.parse(relevantChunksJson); // Python returns JSON array of texts
+    // FIX: The Python script returns an array of objects, not strings.
+    const relevantChunks: { text: string; source: string }[] = JSON.parse(relevantChunksJson);
 
     if (relevantChunks.length === 0) {
       return res.status(200).json({
@@ -272,7 +273,8 @@ app.post("/api/universal-qa", async (req: Request, res: Response) => {
     }
 
     // 2. Construct prompt for LLM (RAG)
-    const context = relevantChunks.join("\n\n");
+    // FIX: Map the objects to their 'text' property to create the context.
+    const context = relevantChunks.map(chunk => chunk.text).join("\n\n");
     const llmPrompt = `You are an intelligent assistant. Answer the following question based ONLY on the provided context. If the answer cannot be found in the context, state that you don't have enough information.
 If the question asks for numerical comparison or data visualization, suggest a chart type (e.g., "bar chart", "line chart", "pie chart") and briefly describe what it would show.
 
@@ -320,9 +322,8 @@ Answer:`;
     }
 
     // 4. Extract citations (simplified for now)
-    const citations = relevantChunks.map(
-      (chunk, index) => `Source Chunk ${index + 1}`
-    ); // Improve this later to use actual filenames/pages
+    // FIX: Use the 'source' from the chunks for better citations.
+    const citations = relevantChunks.map(chunk => chunk.source);
 
     // 5. Simulate chart data and next steps based on AI's answer
     // In a real app, you might use another LLM call or regex to extract chart/next step suggestions
@@ -348,7 +349,7 @@ Answer:`;
 
     // 6. Respond to frontend
     res.status(200).json({
-      answer: aiAnswer,
+      answer: typeof aiAnswer === 'string' ? aiAnswer : JSON.stringify(aiAnswer),
       citations: citations,
       chartData: chartData,
       nextSteps: nextSteps,
