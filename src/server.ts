@@ -124,6 +124,54 @@ export const runPythonScript = (
 };
 
 // --- API Routes ---
+// Use the workspace router
+app.use('/api/workspaces', workspaceRoutes);
+//use the agent router
+app.use('/api/agents',agentRoutes);
+
+// @route   POST /api/generate-knowledge-graph
+// @desc    Generates a knowledge graph from a workspace's documents
+app.post('/api/generate-knowledge-graph',async(req:Request,res:Response)=>{
+  const {workspaceId} = req.body;
+  if(!workspaceId){
+    return res.status(400).json({message:'Workspace ID is required.'});
+  }
+
+  try{
+    // 1. Retrieve all processed documents for the workspace from MongoDB
+    const documents=await DocumentModel.find({workspaceId:workspaceId,processed:true});
+
+    if(documents.length===0){
+      return res.status(400).json({message:'No processed document found'});
+    }
+
+      const allProcessedChunks:string[]=[];
+      for(const doc of documents){
+        if(doc.chromaDocumentId){
+          allProcessedChunks.push(`Placeholder content for doc ID: ${doc.chromaDocumentId}.`);
+        }
+      }
+      const textContext=allProcessedChunks.join('\n\n');
+
+      if(!textContext){
+        return res.status(400).json({message:'Could not retrieve content'});
+      }
+
+      // 3. Trigger the Python script to generate the knowledge graph
+      const pythonScriptPath=path.join(__dirname,'../python_scripts/knowledge_graph_generator.py');
+      const pythonArgs=['generate_grraph',textContext];
+      const pythonOutput=await runPythonScript(pythonScriptPath,pythonArgs);
+
+      // 4. Parse the JSON output from the Python script
+      const knowledgeGraph=JSON.parse(pythonOutput);
+
+      res.status(200).json(knowledgeGraph);
+  }catch(error:any){
+    console.error('Error generating knowledge graph',error);
+    res.status(500).json({message:'Failed to generate knowledge graph',error:error.message});
+  }
+});
+
 
 // @route   POST /api/universal-upload
 // @desc    Uploads a file, processes it, and stores embeddings in ChromaDB
@@ -368,11 +416,6 @@ Answer:`;
     }
   }
 });
-
-// Use the workspace router
-app.use('/api/workspaces', workspaceRoutes);
-//use the agent router
-app.use('/api/agents',agentRoutes);
 
 // --- Basic Route ---
 app.get("/", (req: Request, res: Response) => {
