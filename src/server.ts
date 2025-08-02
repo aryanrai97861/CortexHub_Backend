@@ -16,6 +16,7 @@ import {connectMySQL,sequelize} from './config/mysql';
 import workspaceRoutes from './routes/workspace';
 require('./models/Workspace');
 import User from "./models/User";
+import agentRoutes from "./routes/agent";
 
 // Import Google Gemini SDK
 import {
@@ -370,6 +371,8 @@ Answer:`;
 
 // Use the workspace router
 app.use('/api/workspaces', workspaceRoutes);
+//use the agent router
+app.use('/api/agents',agentRoutes);
 
 // --- Basic Route ---
 app.get("/", (req: Request, res: Response) => {
