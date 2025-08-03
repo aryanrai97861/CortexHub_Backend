@@ -160,7 +160,7 @@ app.post('/api/generate-knowledge-graph',async(req:Request,res:Response)=>{
 
       // 3. Trigger the Python script to generate the knowledge graph
       const pythonScriptPath=path.join(__dirname,'../python_scripts/knowledge_graph_generator.py');
-      const pythonArgs=['generate_grraph',textContext];
+      const pythonArgs=['generate_graph',textContext];
       const pythonOutput=await runPythonScript(pythonScriptPath,pythonArgs);
 
       // 4. Parse the JSON output from the Python script
