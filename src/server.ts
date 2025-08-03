@@ -17,6 +17,7 @@ import workspaceRoutes from './routes/workspace';
 require('./models/Workspace');
 import User from "./models/User";
 import agentRoutes from "./routes/agent";
+import Task from "./models/Task";
 
 // Import Google Gemini SDK
 import {
